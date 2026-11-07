@@ -31,7 +31,7 @@ body{margin:0;background:#EEF2F7;font-family:Inter,Arial,sans-serif;color:#1A223
 .wrap{padding:6px 22px 26px}
 .card{border:2px solid #D3DEEC;border-radius:22px;margin-top:20px;padding:18px 20px 14px}
 .head{display:flex;align-items:center;gap:16px}
-.letter{flex:0 0 58px;width:58px;height:58px;border-radius:14px;background:#183C6B;color:#fff;font-size:34px;font-weight:800;display:grid;place-items:center}
+.letter{flex:0 0 72px;width:72px;height:58px;border-radius:14px;background:#183C6B;color:#fff;font-size:34px;font-weight:800;display:grid;place-items:center}
 .t{font-size:32px;font-weight:800}
 .d{font-size:22px;color:#4A5568;margin-top:3px}
 .figs{display:flex;align-items:flex-end;justify-content:space-between;margin-top:12px}
@@ -59,6 +59,36 @@ def card(letter, title, desc, data, bg):
             f'<div class="mini">{data["mini"]}<div class="cap">ACTIVE RECOVERY</div></div></div></div>')
 
 
+REF_STYLES = [
+    ("R1", "ref1", "Reference look: outlined and shaded",
+     "Black tee, grey shorts, dark trainers, thin outline and soft shadow side. Closest to your ChatGPT image.",
+     "#FFFFFF"),
+    ("R2", "ref2", "Reference look: smooth 3D shading",
+     "Same athlete and outfit without outlines, with rounded gradient shading.",
+     "#FFFFFF"),
+    ("R3", "ref3", "Reference look + working muscles",
+     "R1 with the muscles each lift works glowing red (quads and glutes for squat, hamstrings and glutes for RDL).",
+     "#FFFFFF"),
+]
+
+
+def main_ref():
+    cards = []
+    for letter, key, title, desc, bg in REF_STYLES:
+        env = dict(os.environ, GYM_STYLE=key)
+        js = subprocess.run([sys.executable, os.path.join(HERE, "style_worker.py")], env=env,
+                            capture_output=True, text=True, check=True).stdout
+        cards.append(card(letter, title, desc, json.loads(js), bg))
+    html = (f'<!doctype html><html><head><meta charset="utf-8"><style>{CSS}</style></head><body>'
+            '<div class="band"><h1>Reference-style options</h1><p>Drawn to look like your ChatGPT '
+            'reference. Same exact poses.</p></div>'
+            f'<div class="wrap">{"".join(cards)}'
+            '<div class="foot">Reply R1, R2 or R3, or a mix.</div></div></body></html>')
+    os.makedirs(OUT, exist_ok=True)
+    with open(os.path.join(OUT, "reference-style-options.html"), "w") as f:
+        f.write(html)
+
+
 def main():
     cards = []
     for letter, key, title, desc, bg in STYLES:
@@ -83,4 +113,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    main_ref() if "--ref" in sys.argv else main()

@@ -20,6 +20,34 @@ SKETCH = dict(out="#3A3A3A", fill="#FBF7EE", fill_f="#E9E2D2", hl="#F4A261",
 PERSON = dict(skin="#E2A57F", skin_f="#C4875F", shirt="#2F6FDB", shirt_f="#2457B0",
               shorts="#1F2937", shorts_f="#0B1220", shoe="#2B3340", shoe_f="#4B5563",
               sole="#F25C05", sock="#FFFFFF", sock_f="#E5E7EB", hair="#2B211B")
+REF = dict(skin="#E3AC88", skin_f="#C48D69", shirt="#1E1F23", shirt_f="#0E0F11",
+           shorts="#3A3F47", shorts_f="#22252A", shoe="#1C1E22", shoe_f="#3A3D43",
+           sole="#F4F4F4", sock="#FFFFFF", sock_f="#D9DCE0", hair="#251B16",
+           out="#14161A", ow=0.7, hl="#E53935")
+
+
+def is_ref():
+    return F.STYLE.startswith("ref")
+
+
+def is_person():
+    return F.STYLE == "person" or is_ref()
+
+
+def pp():
+    return REF if is_ref() else PERSON
+
+
+def _mix(hexc, other, t):
+    a = [int(hexc[i:i + 2], 16) for i in (1, 3, 5)]
+    b = [int(other[i:i + 2], 16) for i in (1, 3, 5)]
+    return "#" + "".join(f"{round(x + (y - x) * t):02X}" for x, y in zip(a, b))
+
+
+def tri(f):
+    return (_mix(f, "#FFFFFF", 0.22), f, _mix(f, "#000000", 0.32))
+
+
 MANNEQUIN = dict(c=("#F7F8FA", "#C6CDD5", "#7D8795"), c_f=("#E6E9ED", "#BAC2CB", "#8F99A5"),
                  edge="#6B7583")
 
@@ -52,8 +80,8 @@ def half(a, b, prof, side):
 
 
 # ---- shape primitives -----------------------------------------------------
-def P(pts, fill, grad=None):
-    return ("poly", pts, fill, grad)
+def P(pts, fill, grad=None, op=1.0):
+    return ("poly", pts, fill, grad, op)
 
 
 def C(c, r, fill, rgrad=False):
@@ -73,11 +101,28 @@ def seg_grad(a, b, w):
     return (add(m, mul(n, w / 2)), add(m, mul(n, -w / 2)))
 
 
-def segment(a, b, prof, fill, mannequin=False):
+def shadow(a, b, prof):
+    d = unit(sub(b, a))
+    n = perp(d)
+    side = -1 if n[0] * LIGHT[0] + n[1] * LIGHT[1] > 0 else 1
+    return P(half(a, b, prof, side), "#000000", None, 0.17)
+
+
+def segment(a, b, prof, fill, mannequin=False, caps=True):
+    if F.STYLE == "ref2":
+        mannequin = True
     w0, w1 = prof[0][1], prof[-1][1]
     g = seg_grad(a, b, max(p[1] for p in prof)) if mannequin else None
-    return [C(a, w0 / 2, fill, mannequin), C(b, w1 / 2, fill, mannequin),
-            P(taper(a, b, prof), fill, g)]
+    out = [C(a, w0 / 2, fill, mannequin), C(b, w1 / 2, fill, mannequin)] if caps else []
+    out.append(P(taper(a, b, prof), fill, g))
+    if F.STYLE in ("ref1", "ref3"):
+        out.append(shadow(a, b, prof))
+    return out
+
+
+def cloth(a, b, prof, fill):
+    """Clothing panel (no round caps) with the style's shading."""
+    return segment(a, b, prof, fill, caps=False)
 
 
 # ---- emit -----------------------------------------------------------------
@@ -91,7 +136,7 @@ def _emit(s, z, shape, fill=None, stroke=None, sw=0.0, pal=None):
         _, c, r, f, rg = shape
         f = fill or f
         if rg and not stroke:
-            cols = pal
+            cols = pal or tri(f)
 
             def fn(T, c=c, r=r, cols=cols):
                 gid = f"rg{next(F._IDS)}"
@@ -104,10 +149,12 @@ def _emit(s, z, shape, fill=None, stroke=None, sw=0.0, pal=None):
         else:
             s.circle(c, r, f, stroke=stroke, sw=sw, z=z)
         return
-    _, pts, f, g = shape
+    _, pts, f, g, op = shape
+    if stroke and op < 1:
+        return
     f = fill or f
     if g and not stroke:
-        cols = pal
+        cols = pal or tri(f)
 
         def fn(T, pts=pts, g=g, cols=cols):
             gid = f"lg{next(F._IDS)}"
@@ -119,7 +166,7 @@ def _emit(s, z, shape, fill=None, stroke=None, sw=0.0, pal=None):
                     f'</linearGradient><polygon points="{p}" fill="url(#{gid})"/>')
         s._add(z, fn, pts, 0)
     else:
-        s.poly(pts, f, stroke=stroke, sw=sw, z=z)
+        s.poly(pts, f, stroke=stroke, sw=sw, z=z, opacity=op)
 
 
 def emit_group(s, z, shapes, far=False):
@@ -128,6 +175,11 @@ def emit_group(s, z, shapes, far=False):
         pal = OUTLINE if st == "outline" else SKETCH
         for sh in shapes:
             _emit(s, z, sh, fill=pal["out"], stroke=pal["out"], sw=2 * pal["ow"])
+        for sh in shapes:
+            _emit(s, z + 0.5, sh)
+    elif st in ("ref1", "ref3"):
+        for sh in shapes:
+            _emit(s, z, sh, fill=REF["out"], stroke=REF["out"], sw=2 * REF["ow"])
         for sh in shapes:
             _emit(s, z + 0.5, sh)
     elif st == "mannequin":
@@ -149,8 +201,8 @@ def _limb_fill(far, part="body"):
         if part == "hl":
             return pal["hl_f"] if far else pal["hl"]
         return pal["fill_f"] if far else pal["fill"]
-    if st == "person":
-        return PERSON[part + ("_f" if far else "")]
+    if is_person():
+        return pp()[part + ("_f" if far else "")]
     return "#C6CDD5"
 
 
@@ -160,12 +212,12 @@ def leg_shapes(hip, L, far):
     foot = L.get("foot") or foot_pts(ankle, L.get("phi", 0))
     man = st == "mannequin"
     sh = []
-    if st == "person":
+    if is_person():
         sh += segment(knee, ankle, SHIN_P, _limb_fill(far, "skin"))
         sh += segment(hip, knee, THIGH_P, _limb_fill(far, "skin"))
         mid = add(hip, mul(sub(knee, hip), 0.62))
-        sh += [C(hip, 9, _limb_fill(far, "shorts")),
-               P(taper(hip, mid, [(0, 16.6), (1, 14.6)]), _limb_fill(far, "shorts"))]
+        sh += [C(hip, 9, _limb_fill(far, "shorts"))]
+        sh += cloth(hip, mid, [(0, 16.6), (1, 14.6)], _limb_fill(far, "shorts"))
         sock0 = add(ankle, mul(sub(knee, ankle), 0.2))
         sh += [P(taper(sock0, ankle, [(0, 7.8), (1, 7.2)]), _limb_fill(far, "sock")),
                C(ankle, 3.6, _limb_fill(far, "sock"))]
@@ -173,7 +225,13 @@ def leg_shapes(hip, L, far):
         phi = L.get("phi", 0)
         if not L.get("foot"):
             sh += [Ln(add(ankle, rot((-5.5, -6.6), phi)), add(ankle, rot((20, -6.6), phi)), 2.4,
-                      PERSON["sole"])]
+                      pp()["sole"])]
+        if st == "ref3" and not far:
+            hl = REF["hl"]
+            if "quads" in F.HIGHLIGHT:
+                sh.append(P(half(hip, knee, THIGH_P, +1), hl, None, 0.55))
+            if "hamstrings" in F.HIGHLIGHT:
+                sh.append(P(half(hip, knee, THIGH_P, -1), hl, None, 0.55))
         return sh
     fill = _limb_fill(far)
     thigh_fill = fill
@@ -203,12 +261,12 @@ def arm_shapes(shp, A, far):
     el, wr = A["elbow"], A["wrist"]
     hand = add(wr, mul(unit(sub(wr, el)), 3.0))
     man = st == "mannequin"
-    if st == "person":
+    if is_person():
         skin = _limb_fill(far, "skin")
         sh = segment(el, wr, FARM_P, skin) + segment(shp, el, UARM_P, skin)
         mid = add(shp, mul(sub(el, shp), 0.5))
-        sh += [C(shp, 6.2, _limb_fill(far, "shirt")),
-               P(taper(shp, mid, [(0, 12), (1, 10.2)]), _limb_fill(far, "shirt"))]
+        sh += [C(shp, 6.2, _limb_fill(far, "shirt"))]
+        sh += cloth(shp, mid, [(0, 12), (1, 10.2)], _limb_fill(far, "shirt"))
         sh += [C(hand, 4.6, skin)]
         return sh
     fill = _limb_fill(far)
@@ -225,21 +283,31 @@ def torso_shapes(hip, shp, head, nd):
     f = (nd[1], -nd[0])          # face direction
     back = mul(f, -1)
     neck_top = add(shp, mul(nd, 9))
-    if st == "person":
-        skin, shirt = PERSON["skin"], PERSON["shirt"]
+    if is_person():
+        PAL = pp()
+        skin, shirt = PAL["skin"], PAL["shirt"]
         sh = [Ln(shp, neck_top, 8, skin)]
-        sh += [C(hip, 11, PERSON["shorts"]), C(shp, 9.5, shirt),
-               P(taper(hip, shp, TORSO_P), shirt)]
+        sh += [C(hip, 11, PAL["shorts"]), C(shp, 9.5, shirt),
+               P(taper(hip, shp, TORSO_P), shirt, seg_grad(hip, shp, 24) if st == "ref2" else None)]
+        if st in ("ref1", "ref3"):
+            sh.append(shadow(hip, shp, [(0, 22), (0.35, 19.5), (0.7, 23.5), (0.92, 21), (1, 17)]))
         # shorts waistband over the lower torso
         wb = add(hip, mul(unit(sub(shp, hip)), 9))
-        sh += [P(taper(hip, wb, [(0, 23), (1, 20)]), PERSON["shorts"])]
-        sh += [C(add(add(head, mul(back, 1.4)), mul(nd, 1.2)), F.HEAD_R + 0.6, PERSON["hair"]),
+        sh += cloth(hip, wb, [(0, 23), (1, 20)], PAL["shorts"])
+        if st == "ref3" and "glutes" in F.HIGHLIGHT:
+            bn = perp(unit(sub(shp, hip)))
+            sh.append(P(half_disc(add(hip, mul(bn, 2.5)), 10.5, bn), REF["hl"], None, 0.55))
+        sh += [C(add(add(head, mul(back, 1.4)), mul(nd, 1.2)), F.HEAD_R + 0.6, PAL["hair"]),
                C(add(head, mul(f, 1.0)), F.HEAD_R - 0.4, skin),
                P([add(head, mul(back, 1.5)), add(add(head, mul(back, 11.5)), mul(nd, 4)),
                   add(add(head, mul(back, 5)), mul(nd, 11.5)), add(head, mul(nd, 11))],
-                 PERSON["hair"]),
+                 PAL["hair"]),
                C(add(head, mul(back, 1.8)), 2.4, "#D0916C"),
                C(add(add(head, mul(f, 9.6)), mul(nd, -0.5)), 1.9, skin)]
+        if is_ref():   # eye + brow give the face direction, like the reference
+            sh.append(C(add(add(head, mul(f, 6.4)), mul(nd, 1.4)), 0.95, "#1A1A1A"))
+            sh.append(Ln(add(add(head, mul(f, 4.8)), mul(nd, 3.6)),
+                         add(add(head, mul(f, 7.8)), mul(nd, 3.4)), 1.1, PAL["hair"]))
         return sh
     fill = _limb_fill(False)
     sh = [Ln(shp, neck_top, 8, fill)]

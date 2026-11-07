@@ -39,6 +39,8 @@ _PALETTES = {
                       EQUIP_LIGHT="#DDE2E8", MOTION="#E8590C", CALM="#2F855A", GROUND="#C9CFD7",
                       PLATE="#DDE2E8", PLATE_EDGE="#6B7583"),
 }
+for _k in ("ref1", "ref2", "ref3"):
+    _PALETTES[_k] = _PALETTES["person"]
 globals().update(_PALETTES[STYLE])
 HIGHLIGHT = set()   # muscle groups to highlight in the "outline" style
 
