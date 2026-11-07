@@ -9,8 +9,8 @@ def fk_leg(hip, thigh_deg, shin_deg, phi, far=False):
 
 
 def plate(s, c, r=21, z=3):
-    s.circle(c, r, EQUIP_LIGHT, stroke=EQUIP, sw=2.2, z=z)
-    s.circle(c, r * 0.62, "none", stroke=EQUIP, sw=1.4, z=z)
+    s.circle(c, r, PLATE, stroke=PLATE_EDGE, sw=2.2, z=z)
+    s.circle(c, r * 0.62, "none", stroke=PLATE_EDGE, sw=1.4, z=z)
     s.circle(c, 3.2, EQUIP_DARK, z=z + 1)
 
 

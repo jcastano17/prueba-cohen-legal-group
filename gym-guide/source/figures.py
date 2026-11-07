@@ -4,7 +4,10 @@ World coordinates: x to the right, y UP, ground at y = 0, units ~ cm for a
 ~175 cm person. Every limb has a fixed length, and knees/elbows are placed by
 two-bone inverse kinematics, so every pose keeps the same anatomy.
 """
+import itertools
 import math
+
+_IDS = itertools.count(1)
 
 # ---- body segment lengths (fixed for every pose) ----
 TORSO = 52      # hip joint -> shoulder joint
@@ -16,13 +19,28 @@ THIGH = 44      # hip -> knee
 SHIN = 43       # knee -> ankle
 ANKLE_H = 7     # ankle joint height above the sole
 
-NEAR = "#24324A"
-FAR = "#9AA6BC"
-EQUIP = "#7C8796"
-EQUIP_DARK = "#4B5563"
-EQUIP_LIGHT = "#D5DBE3"
-MOTION = "#E8590C"
-CALM = "#2F855A"
+import os
+STYLE = os.environ.get("GYM_STYLE", "flat")
+_PALETTES = {
+    # flat = the first version (navy silhouettes)
+    "flat": dict(NEAR="#24324A", FAR="#9AA6BC", EQUIP="#7C8796", EQUIP_DARK="#4B5563",
+                 EQUIP_LIGHT="#D5DBE3", MOTION="#E8590C", CALM="#2F855A", GROUND="#C7CDD6",
+                 PLATE="#D5DBE3", PLATE_EDGE="#7C8796"),
+    "outline": dict(NEAR="#1E293B", FAR="#94A3B8", EQUIP="#CBD5E1", EQUIP_DARK="#64748B",
+                    EQUIP_LIGHT="#F1F5F9", MOTION="#E8590C", CALM="#2F855A", GROUND="#CBD5E1",
+                    PLATE="#F1F5F9", PLATE_EDGE="#64748B"),
+    "person": dict(NEAR="#1F2937", FAR="#6B7280", EQUIP="#3B4048", EQUIP_DARK="#1F2328",
+                   EQUIP_LIGHT="#A7B0BA", MOTION="#F25C05", CALM="#16A34A", GROUND="#D6DCE3",
+                   PLATE="#2B3038", PLATE_EDGE="#111418"),
+    "sketch": dict(NEAR="#333333", FAR="#8A8A8A", EQUIP="#D9D2C3", EQUIP_DARK="#4A4A4A",
+                   EQUIP_LIGHT="#EEE8DB", MOTION="#E4572E", CALM="#2E7D4F", GROUND="#B9B2A3",
+                   PLATE="#EEE8DB", PLATE_EDGE="#4A4A4A"),
+    "mannequin": dict(NEAR="#5B6573", FAR="#AAB2BD", EQUIP="#8A94A1", EQUIP_DARK="#4B5563",
+                      EQUIP_LIGHT="#DDE2E8", MOTION="#E8590C", CALM="#2F855A", GROUND="#C9CFD7",
+                      PLATE="#DDE2E8", PLATE_EDGE="#6B7583"),
+}
+globals().update(_PALETTES[STYLE])
+HIGHLIGHT = set()   # muscle groups to highlight in the "outline" style
 
 
 # ---------- vector helpers ----------
@@ -186,9 +204,15 @@ class Scene:
             def __call__(self, p):
                 return (pad + (p[0] - x0) * scale, pad + (y1 - p[1]) * scale)
         t = T()
-        body = [fn(t) for z, fn, _, _ in sorted(self.items, key=lambda i: i[0])]
+        body = "".join(fn(t) for z, fn, _, _ in sorted(self.items, key=lambda i: i[0]))
+        if STYLE == "sketch":
+            fid = f"rough{next(_IDS)}"
+            body = (f'<filter id="{fid}" x="-5%" y="-5%" width="110%" height="110%">'
+                    f'<feTurbulence type="fractalNoise" baseFrequency="0.04" numOctaves="2" seed="7"/>'
+                    f'<feDisplacementMap in="SourceGraphic" scale="{2.6 * scale:.1f}"/></filter>'
+                    f'<g filter="url(#{fid})">{body}</g>')
         return (f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {W:.0f} {H:.0f}" '
-                f'width="{W:.0f}" height="{H:.0f}">' + "".join(body) + "</svg>")
+                f'width="{W:.0f}" height="{H:.0f}">' + body + "</svg>")
 
 
 def union(*boxes):
@@ -204,6 +228,10 @@ def draw_body(s, hip, torso_dir, legs, arms, neck_dir=None, head_offset=0.0,
     sh = add(hip, mul(torso_dir, TORSO))
     nd = neck_dir or torso_dir
     head = add(add(sh, mul(nd, NECK)), mul((nd[1], -nd[0]), head_offset))
+    if STYLE != "flat":
+        from figure_styles import draw_styled
+        draw_styled(s, hip, sh, head, nd, legs, arms)
+        return sh, head
 
     for i, L in enumerate(legs):
         col, z = (FAR, 2) if L.get("far") else (NEAR, 6)
@@ -238,4 +266,4 @@ def shoulder_of(hip, torso_dir):
 
 
 def ground(s, x0, x1, z=-5):
-    s.line((x0, -1.5), (x1, -1.5), 3, "#C7CDD6", z=z, cap="butt")
+    s.line((x0, -1.5), (x1, -1.5), 3, GROUND, z=z, cap="butt")
